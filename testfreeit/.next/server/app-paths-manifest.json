@@ -1,0 +1,9 @@
+{
+  "/conference/page": "app/conference/page.js",
+  "/conference/speakers/[slug]/page": "app/conference/speakers/[slug]/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/home/page": "app/home/page.js",
+  "/blog/page": "app/blog/page.js",
+  "/conference/speakers/page": "app/conference/speakers/page.js",
+  "/conference/sessions/page": "app/conference/sessions/page.js"
+}

@@ -1,0 +1,6 @@
+Date: 20/12/2022
+
+Healthcare Landing Page using Next.js 13 & Tailwind CSS from scratch | Medico
+(６：４８)
+https://www.youtube.com/watch?v=iXl1bN74FGE
+

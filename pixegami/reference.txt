@@ -1,0 +1,8 @@
+Date: 23/12/2022
+
+Source:
+Youtube
+NextJS 13 Tutorial: Create a Static Blog from Markdown Files（14:00）
+https://www.youtube.com/watch?v=Hiabp1GY8fA
+
+
