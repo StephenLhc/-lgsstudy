@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { bibleUrl } from '@/lib/bible';
@@ -15,6 +15,37 @@ interface PostSummary {
 
 // 本裝置記住的回應者登記資料（localStorage key）
 const RESPONDER_KEY = 'lgsstudy_responder';
+
+// 回應草稿：保存寫到一半的內容（防止瀏覽器崩潰／關頁丟失）
+const RESPONSE_DRAFT_KEY = 'lgsstudy_response_draft';
+interface ResponseDraft {
+    postId: number | '';
+    commentText: string;
+    savedAt: number;
+}
+function readResponseDraft(): ResponseDraft | null {
+    try {
+        const raw = localStorage.getItem(RESPONSE_DRAFT_KEY);
+        if (!raw) return null;
+        const d = JSON.parse(raw);
+        if (typeof d?.commentText !== 'string') return null;
+        return {
+            postId: Number.isInteger(d.postId) ? d.postId : '',
+            commentText: d.commentText,
+            savedAt: Number(d.savedAt) || 0,
+        };
+    } catch { return null; }
+}
+function writeResponseDraft(d: ResponseDraft): void {
+    try { localStorage.setItem(RESPONSE_DRAFT_KEY, JSON.stringify(d)); } catch {}
+}
+function clearResponseDraft(): void {
+    try { localStorage.removeItem(RESPONSE_DRAFT_KEY); } catch {}
+}
+// 指紋：用於比對內容是否真的改變，避免重複寫 localStorage
+function fpOf(postId: number | '', text: string): string {
+    return `${postId}|${text}`;
+}
 
 function RespondPageInner() {
     const router = useRouter();
@@ -39,10 +70,20 @@ function RespondPageInner() {
     // 回應內容狀態
     const [commentText, setCommentText] = useState('');
 
+    // 草稿自動儲存狀態
+    const [draftStatus, setDraftStatus] = useState<'idle' | 'unsaved' | 'saved'>('idle');
+    const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+    const [pendingDraft, setPendingDraft] = useState<ResponseDraft | null>(null);
+    // 指紋 ref：避免閉包抓到舊值
+    const latestFpRef = useRef<string>('');
+    const lastSavedFpRef = useRef<string>('');
+    const submittingRef = useRef(false);
+
     // 彈窗控制狀態
     const [showConsentModal, setShowConsentModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false); // 自訂成功提示框
     const [submitting, setSubmitting] = useState(false);
+    submittingRef.current = submitting;
     const [submitError, setSubmitError] = useState('');
     // 曾在本裝置登記過的回應者：免重填登記表，並沿用上次的公開設定
     const [isReturning, setIsReturning] = useState(false);
@@ -102,6 +143,117 @@ function RespondPageInner() {
         [posts, selectedPostId],
     );
 
+    // ───── 進頁時比對舊草稿 ─────
+    useEffect(() => {
+        // 等 selectedPostId 穩定後才比對（避免 articles 還沒載完就比對）
+        if (!postsLoading && selectedPostId !== '' && step !== 2) {
+            const draft = readResponseDraft();
+            if (draft && draft.commentText.trim()) {
+                // 先把草稿的指紋記下，防止第一層 debounce 在 commentText 尚未還原前
+                // 把空內容寫入 localStorage 覆蓋了這份草稿
+                lastSavedFpRef.current = fpOf(draft.postId, draft.commentText);
+                setPendingDraft(draft);
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [postsLoading, selectedPostId]);
+
+    const restoreDraft = () => {
+        if (!pendingDraft) return;
+        if (pendingDraft.postId !== '' && Number.isInteger(pendingDraft.postId)) {
+            setSelectedPostId(pendingDraft.postId);
+        }
+        setCommentText(pendingDraft.commentText);
+        lastSavedFpRef.current = fpOf(pendingDraft.postId, pendingDraft.commentText);
+        setDraftSavedAt(pendingDraft.savedAt);
+        setDraftStatus('saved');
+        setPendingDraft(null);
+        setStep(2); // 直接跳到寫回應畫面
+    };
+    const discardDraft = () => {
+        clearResponseDraft();
+        setPendingDraft(null);
+    };
+
+    // 立即把草稿寫入 localStorage（空白內容則刪除）
+    const persistDraft = () => {
+        const fp = fpOf(selectedPostId, commentText);
+        latestFpRef.current = fp;
+        if (submittingRef.current) return; // 送出中不存，避免覆蓋成功後的清除
+        if (fp === lastSavedFpRef.current) return; // 沒有變更就不重複寫
+        if (!commentText.trim()) {
+            // 空白內容：只有在文章已載入（selectedPostId 非空）時才清除草稿
+            // 文章還沒載好時，保留可能存在的舊草稿
+            if (selectedPostId !== '') {
+                clearResponseDraft();
+                lastSavedFpRef.current = fp;
+                setDraftStatus('idle');
+                setDraftSavedAt(null);
+            }
+            return;
+        }
+        const now = Date.now();
+        writeResponseDraft({ postId: selectedPostId, commentText, savedAt: now });
+        lastSavedFpRef.current = fp;
+        setDraftSavedAt(now);
+        setDraftStatus('saved');
+    };
+
+    // 第一層：輸入靜止 3 秒後自動儲存（debounce）
+    useEffect(() => {
+        const fp = fpOf(selectedPostId, commentText);
+        latestFpRef.current = fp;
+        if (fp === lastSavedFpRef.current) {
+            setDraftStatus('saved');
+            return;
+        }
+        setDraftStatus('unsaved');
+        const timer = setTimeout(() => {
+            persistDraft();
+        }, 3000);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedPostId, commentText]);
+
+    // 第二層：每 30 秒檢查一次，仍有未儲存變更就補存
+    useEffect(() => {
+        const id = setInterval(() => {
+            if (submittingRef.current) return;
+            if (latestFpRef.current !== lastSavedFpRef.current) {
+                persistDraft();
+            }
+        }, 30000);
+        return () => clearInterval(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // 第三層：關閉分頁／重整／離開頁面前同步兜底
+    useEffect(() => {
+        const flush = () => {
+            if (submittingRef.current) return;
+            if (latestFpRef.current === lastSavedFpRef.current) return;
+            try {
+                if (!commentText.trim()) {
+                    // 空白內容：只有文章已載入才清除
+                    if (selectedPostId !== '') clearResponseDraft();
+                } else {
+                    writeResponseDraft({
+                        postId: selectedPostId,
+                        commentText,
+                        savedAt: Date.now(),
+                    });
+                }
+            } catch {}
+        };
+        window.addEventListener('beforeunload', flush);
+        window.addEventListener('pagehide', flush);
+        return () => {
+            window.removeEventListener('beforeunload', flush);
+            window.removeEventListener('pagehide', flush);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedPostId, commentText]);
+
     // 第一步：驗證並進入左右分欄
     const handleProfileSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -151,6 +303,10 @@ function RespondPageInner() {
             }
             setCommentText('');
             setLastConsentPublic(isPublic);
+            clearResponseDraft();
+            setDraftStatus('idle');
+            setDraftSavedAt(null);
+            lastSavedFpRef.current = '';
             setShowSuccessModal(true);
         } catch {
             setSubmitError('網路不穩，回應未能送出，請再按一次「發送回應」');
@@ -344,6 +500,16 @@ function RespondPageInner() {
                                 placeholder="請在此輸入回應內容..."
                                 className="w-full p-4 border-2 border-gray-300 rounded-xl text-xl focus:border-emerald-600 outline-none resize-none bg-amber-50/30"
                             />
+                            {/* 自動儲存狀態列 */}
+                            {draftStatus !== 'idle' && commentText.trim() && (
+                                <p className={`text-sm mt-1 ${
+                                    draftStatus === 'saved' ? 'text-emerald-600' : 'text-amber-600'
+                                }`}>
+                                    {draftStatus === 'saved'
+                                        ? `✓ 已自動儲存${draftSavedAt ? '（' + new Date(draftSavedAt).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' }) + '）' : ''}`
+                                        : '● 寫入中…'}
+                                </p>
+                            )}
                             {submitError && (
                                 <p className="text-red-600 font-bold mt-2">{submitError}</p>
                             )}
@@ -413,6 +579,45 @@ function RespondPageInner() {
                         >
                             確定
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 📍 舊草稿提示 Modal —— 進頁時發現有上次未送出的回應 */}
+            {pendingDraft && !showSuccessModal && !showConsentModal && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl p-6 md:p-8 max-w-md w-full text-center shadow-2xl">
+                        <h3 className="text-2xl font-bold mb-3 text-amber-700">📝 找到上次未送出的回應</h3>
+                        <p className="text-lg text-gray-700 mb-2">
+                            {(() => {
+                                const target = posts.find((p) => p.id === pendingDraft.postId);
+                                if (target) return `文章：《${target.title}》`;
+                                if (pendingDraft.postId !== '') return `文章編號 ${pendingDraft.postId}`;
+                                return '（未指定文章）';
+                            })()}
+                        </p>
+                        <p className="text-sm text-gray-500 mb-1">
+                            {pendingDraft.commentText.length > 80
+                                ? pendingDraft.commentText.slice(0, 80) + '…'
+                                : pendingDraft.commentText}
+                        </p>
+                        <p className="text-xs text-gray-400 mb-6">
+                            上次自動儲存：{new Date(pendingDraft.savedAt || Date.now()).toLocaleString('zh-HK')}
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <button
+                                onClick={restoreDraft}
+                                className="flex-1 bg-emerald-700 text-white py-3 rounded-xl text-lg font-bold hover:bg-emerald-800"
+                            >
+                                還原繼續寫
+                            </button>
+                            <button
+                                onClick={discardDraft}
+                                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl text-lg font-bold hover:bg-gray-300"
+                            >
+                                捨棄重新來
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

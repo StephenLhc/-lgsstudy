@@ -60,6 +60,7 @@ export async function GET(request: Request) {
         CROSS JOIN target
         WHERE p.id <> ${postId}
           AND p.is_deleted = false
+          AND p.post_date <= (NOW() AT TIME ZONE 'Asia/Hong_Kong')::date
           -- 至少共享一個分類（陣列重疊運算子 &&）
           AND string_to_array(COALESCE(p.category, '靈修默想'), '、') && target.cats
         ORDER BY overlap_count DESC, p.post_date DESC, p.id DESC

@@ -33,6 +33,8 @@ export async function GET() {
         COALESCE(is_pinned, false) as is_pinned
       FROM posts
       WHERE is_deleted = false
+        -- 排程發布：未來日期的文章對讀者隱形（用香港時區比較）
+        AND post_date <= (NOW() AT TIME ZONE 'Asia/Hong_Kong')::date
       -- 置頂文章永遠排最前；其餘（及多篇置頂之間）按發布日期由新到舊
       ORDER BY is_pinned DESC, post_date DESC, id DESC
     `,
@@ -90,6 +92,7 @@ export async function PATCH(request: Request) {
         UPDATE posts
         SET views = COALESCE(views, 0) + 1
         WHERE id = ${postId} AND is_deleted = false
+          AND post_date <= (NOW() AT TIME ZONE 'Asia/Hong_Kong')::date
         RETURNING COALESCE(views, 0) as views
       `,
       );

@@ -290,6 +290,19 @@ export default function AdminManagePage() {
                           已置頂
                         </span>
                       )}
+                      {!post.is_deleted && post.post_date > (() => {
+                        // 用香港時區的今天作比較基準
+                        const now = new Date();
+                        const hkDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Hong_Kong' }));
+                        const yyyy = hkDate.getFullYear();
+                        const mm = String(hkDate.getMonth() + 1).padStart(2, '0');
+                        const dd = String(hkDate.getDate()).padStart(2, '0');
+                        return `${yyyy}-${mm}-${dd}`;
+                      })() && (
+                        <span className="bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 font-bold px-2.5 py-0.5 rounded-full text-xs flex items-center gap-1 border border-sky-300 dark:border-sky-700">
+                          🕐 排程中（{post.post_date?.slice(5, 10)} 發布）
+                        </span>
+                      )}
                       {post.is_deleted && (
                         <span className="bg-gray-600 text-white font-bold px-2.5 py-0.5 rounded-full text-xs flex items-center gap-1">
                           <Trash2 className="w-3 h-3" />

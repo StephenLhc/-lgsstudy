@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { withDbRetry } from "@/lib/db";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { isAdminRequest } from "../auth";
+import { sendNewPostNotification } from "@/lib/newsletter";
 
 // 需要寫入本機檔案系統（圖片上傳），強制使用 Node.js 執行環境
 export const runtime = "nodejs";
@@ -180,9 +181,31 @@ export async function POST(request: Request) {
     `,
     );
 
+    const newId = result[0]?.id ?? null;
+
+    // 只有當發布日期是今天或更早（香港時區），才立即寄發新文章通知
+    // 排程中的文章（未來日期）等到讀者可見那天不會自動補寄，
+    // 因為 Next.js 沒有持久定時器；若有需要可日後用 Vercel Cron 補發。
+    const isPublishedTodayOrBefore = postDate <= todayString();
+    if (newId && isPublishedTodayOrBefore) {
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+      after(() =>
+        sendNewPostNotification({
+          postId: newId,
+          title,
+          scripture,
+          category,
+          content,
+          imageUrl: imageResult.imageUrl,
+          postUrl: `${siteUrl}/?postId=${newId}`,
+          siteUrl,
+        }).catch((err) => console.error('newsletter after() error:', err)),
+      );
+    }
+
     return NextResponse.json({
       ok: true,
-      id: result[0]?.id ?? null,
+      id: newId,
       image_url: imageResult.imageUrl,
     });
   } catch (error) {

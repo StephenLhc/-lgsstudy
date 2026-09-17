@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { Heart, ThumbsDown, MessageSquare, Search, Filter, Calendar, Tag, Loader2, Sun, Moon, Eye, LayoutDashboard, LogIn, Share2, Link2, Check, ChevronLeft, ChevronRight, Clock, CornerDownRight, Pin, Sparkles, Flame } from 'lucide-react';
+import { Heart, ThumbsDown, MessageSquare, Search, Filter, Calendar, Tag, Loader2, Sun, Moon, Eye, LayoutDashboard, LogIn, Share2, Link2, Check, ChevronLeft, ChevronRight, Clock, CornerDownRight, Pin, Sparkles, Flame, Bookmark } from 'lucide-react';
 import { bibleUrl } from '@/lib/bible';
 
 interface Post {
@@ -124,6 +124,11 @@ export default function HomePage() {
     const VOTE_STORAGE_KEY = 'lgsstudy_post_votes';
     const [votes, setVotes] = useState<Record<number, { liked: boolean; disliked: boolean }>>({});
 
+    // 收藏／書籤：讀者沒有帳號系統，收藏的文章 id 清單存於本機 localStorage（重新整理仍保留）
+    const BOOKMARK_STORAGE_KEY = 'lgsstudy_bookmarks';
+    const [bookmarks, setBookmarks] = useState<number[]>([]);
+    const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
+
     // 「複製連結」按鈕的成功提示狀態
     const [linkCopied, setLinkCopied] = useState(false);
 
@@ -136,6 +141,23 @@ export default function HomePage() {
         }
     };
 
+    const saveBookmarks = (next: number[]) => {
+        setBookmarks(next);
+        try {
+            localStorage.setItem(BOOKMARK_STORAGE_KEY, JSON.stringify(next));
+        } catch (err) {
+            console.warn('無法寫入收藏:', err);
+        }
+    };
+
+    // 切換收藏：沒收藏過加入（排在最前），已收藏再按移除
+    const toggleBookmark = (postId: number) => {
+        const next = bookmarks.includes(postId)
+            ? bookmarks.filter((id) => id !== postId)
+            : [postId, ...bookmarks];
+        saveBookmarks(next);
+    };
+
     // 確保元件在 Client 端載入完畢（避免 hydration  mismatch），並讀回先前的投票狀態
     useEffect(() => {
         setMounted(true);
@@ -144,6 +166,15 @@ export default function HomePage() {
             if (raw) setVotes(JSON.parse(raw));
         } catch (err) {
             console.warn('無法讀取投票狀態:', err);
+        }
+        try {
+            const rawBm = localStorage.getItem(BOOKMARK_STORAGE_KEY);
+            if (rawBm) {
+                const arr = JSON.parse(rawBm);
+                if (Array.isArray(arr)) setBookmarks(arr.filter((x): x is number => Number.isInteger(x)));
+            }
+        } catch (err) {
+            console.warn('無法讀取收藏:', err);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -413,8 +444,9 @@ export default function HomePage() {
                 const matchesCategory =
                     selectedCategory === '全部' || splitCategories(p.category).includes(selectedCategory);
                 const matchesDate = selectedDate ? p.post_date === selectedDate : true;
+                const matchesBookmark = !showBookmarksOnly || bookmarks.includes(p.id);
 
-                return matchesKeyword && matchesCategory && matchesDate;
+                return matchesKeyword && matchesCategory && matchesDate && matchesBookmark;
             })
             .sort((a, b) => {
                 // 無論哪種排序，置頂文章永遠排最前
@@ -426,7 +458,7 @@ export default function HomePage() {
                 if (sortBy === 'comments') return (b.comment_count || 0) - (a.comment_count || 0);
                 return new Date(b.post_date).getTime() - new Date(a.post_date).getTime() || b.id - a.id;
             });
-    }, [posts, searchKeyword, selectedCategory, selectedDate, sortBy]);
+    }, [posts, searchKeyword, selectedCategory, selectedDate, sortBy, showBookmarksOnly, bookmarks]);
 
     // 熱門文章排行：依瀏覽量由高到低取前 5 名（同瀏覽量時以 id 由大到小決定順序）
     // 不受搜尋/篩選影響，反映整站實際熱門度
@@ -606,6 +638,29 @@ export default function HomePage() {
                             <Eye className="w-6 h-6 sm:w-8 sm:h-8" />
                             <span className="text-xs sm:text-lg font-bold">{selectedPost.views || 0} 次瀏覽</span>
                         </div>
+
+                        {/* 收藏／書籤：只存於本機瀏覽器，不計入網站統計 */}
+                        <button
+                            onClick={() => toggleBookmark(selectedPost.id)}
+                            aria-pressed={bookmarks.includes(selectedPost.id)}
+                            title={bookmarks.includes(selectedPost.id) ? '已收藏，再按一次取消' : '收藏這篇，方便日後重看'}
+                            className={`flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl transition ${
+                                bookmarks.includes(selectedPost.id)
+                                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 ring-2 ring-amber-400 dark:ring-amber-500'
+                                    : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                            }`}
+                        >
+                            <Bookmark
+                                className={`w-6 h-6 sm:w-8 sm:h-8 ${
+                                    bookmarks.includes(selectedPost.id)
+                                        ? 'fill-amber-500 text-amber-600 dark:text-amber-400'
+                                        : 'fill-amber-100 dark:fill-amber-950'
+                                }`}
+                            />
+                            <span className="text-xs sm:text-lg font-bold">
+                                {bookmarks.includes(selectedPost.id) ? '已收藏' : '收藏'}
+                            </span>
+                        </button>
 
                         <button
                             onClick={() => toggleReaction('like')}
@@ -857,6 +912,24 @@ export default function HomePage() {
                     {/* 🔍 搜尋與篩選控制區 */}
                     <div className="space-y-4 mb-6 bg-amber-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-amber-200/80 dark:border-slate-700">
 
+                        {/* 0. 只看我的收藏（收藏清單存於本機瀏覽器） */}
+                        <button
+                            onClick={() => setShowBookmarksOnly((v) => !v)}
+                            disabled={bookmarks.length === 0 && !showBookmarksOnly}
+                            aria-pressed={showBookmarksOnly}
+                            className={`w-full flex items-center justify-center gap-2 p-2.5 sm:p-3 rounded-xl font-bold text-base sm:text-lg border-2 transition ${
+                                showBookmarksOnly
+                                    ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                                    : bookmarks.length === 0
+                                        ? 'bg-gray-100 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed'
+                                        : 'bg-white dark:bg-slate-900 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                            }`}
+                            title={bookmarks.length === 0 ? '按下文章上的「收藏」後，就能在這裡快速找回' : '只顯示你在本機收藏的文章'}
+                        >
+                            <Bookmark className={`w-5 h-5 ${showBookmarksOnly ? 'fill-white' : bookmarks.length > 0 ? 'fill-amber-300' : ''}`} />
+                            {showBookmarksOnly ? '顯示全部文章' : `只看我的收藏（${bookmarks.length}）`}
+                        </button>
+
                         {/* 1. 關鍵字搜尋框 */}
                         <div>
                             <label className="block text-gray-700 dark:text-slate-300 font-bold mb-1.5 text-base sm:text-lg">搜尋經文或關鍵字：</label>
@@ -996,6 +1069,15 @@ export default function HomePage() {
                                                         置頂
                                                     </span>
                                                 )}
+                                                {bookmarks.includes(p.id) && (
+                                                    <span
+                                                        className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 flex items-center gap-1 border border-amber-300 dark:border-amber-700"
+                                                        title="你已收藏這篇"
+                                                    >
+                                                        <Bookmark className="w-3 h-3 fill-amber-500 text-amber-600 dark:text-amber-400" />
+                                                        已收藏
+                                                    </span>
+                                                )}
                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isSelected ? 'bg-emerald-600 text-white' : 'bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300'}`}>
                                                     {p.post_date}
                                                 </span>
@@ -1023,6 +1105,18 @@ export default function HomePage() {
                                     </button>
                                 );
                             })
+                        ) : showBookmarksOnly ? (
+                            <div className="text-center text-gray-500 dark:text-slate-400 py-8 px-4">
+                                <Bookmark className="w-10 h-10 mx-auto mb-2 text-amber-300 dark:text-amber-700" />
+                                <p className="text-base sm:text-lg font-bold mb-1">收藏清單沒有符合的文章</p>
+                                <p className="text-sm">你收藏的文章可能被其他篩選條件排除了，試著清除關鍵字或分類篩選</p>
+                                <button
+                                    onClick={() => { setShowBookmarksOnly(false); setSearchKeyword(''); setSelectedCategory('全部'); setSelectedDate(''); }}
+                                    className="mt-3 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm transition"
+                                >
+                                    重設篩選條件
+                                </button>
+                            </div>
                         ) : (
                             <p className="text-center text-gray-500 dark:text-slate-400 py-8 text-base sm:text-lg font-medium">
                                 沒有找到符合條件的文章 😅

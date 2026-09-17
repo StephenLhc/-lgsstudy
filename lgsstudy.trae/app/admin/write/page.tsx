@@ -1019,6 +1019,23 @@ function WriteEditor() {
                   onChange={(e) => setPostDate(e.target.value)}
                   className="w-full p-2.5 border-2 border-gray-300 dark:border-slate-600 rounded-xl text-base sm:text-lg outline-none focus:border-emerald-600 dark:focus:border-emerald-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 />
+                {(() => {
+                  // 判斷是否排程中：用香港時區今天比較
+                  const now = new Date();
+                  const hkDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Hong_Kong' }));
+                  const yyyy = hkDate.getFullYear();
+                  const mm = String(hkDate.getMonth() + 1).padStart(2, '0');
+                  const dd = String(hkDate.getDate()).padStart(2, '0');
+                  const hkToday = `${yyyy}-${mm}-${dd}`;
+                  if (postDate && postDate > hkToday) {
+                    return (
+                      <p className="mt-1 text-xs text-sky-600 dark:text-sky-400 font-medium">
+                        🕐 排程發布：{postDate} 當天讀者才能看到
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div>
                 <label className="block font-bold mb-1.5 text-base sm:text-lg">

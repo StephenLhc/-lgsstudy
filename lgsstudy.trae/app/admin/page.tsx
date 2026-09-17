@@ -13,6 +13,8 @@ import {
   FolderKanban,
   Trash2,
   MessageSquare,
+  Images,
+  BarChart3,
 } from 'lucide-react';
 
 // 作者後台入口：先輸入密碼，登入後顯示「寫新文章 / 讀者板面」兩選一選單
@@ -284,7 +286,51 @@ export default function AdminHomePage() {
             </span>
           </button>
 
-          {/* 選項 4：讀者板面 */}
+          {/* 選項 5：媒體庫 */}
+          <button
+            onClick={() => router.push('/admin/media')}
+            className="group bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl shadow-md border-2 border-pink-200 dark:border-pink-900/60 hover:border-pink-500 dark:hover:border-pink-500 hover:shadow-lg transition text-left flex flex-col gap-4"
+          >
+            <span className="w-14 h-14 rounded-2xl bg-pink-100 dark:bg-pink-950/60 flex items-center justify-center text-pink-700 dark:text-pink-300 group-hover:scale-105 transition">
+              <Images className="w-7 h-7" />
+            </span>
+            <span>
+              <span className="block text-2xl font-bold text-slate-900 dark:text-slate-100 mb-1">
+                媒體庫
+              </span>
+              <span className="text-base text-gray-500 dark:text-slate-400">
+                統一管理文章配圖，之後擴展視頻
+              </span>
+            </span>
+            <span className="mt-auto flex items-center gap-1 text-pink-700 dark:text-pink-400 font-bold">
+              進入媒體庫
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </span>
+          </button>
+
+          {/* 選項 6：數據儀表板 */}
+          <button
+            onClick={() => router.push('/admin/dashboard')}
+            className="group bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl shadow-md border-2 border-cyan-200 dark:border-cyan-900/60 hover:border-cyan-500 dark:hover:border-cyan-500 hover:shadow-lg transition text-left flex flex-col gap-4"
+          >
+            <span className="w-14 h-14 rounded-2xl bg-cyan-100 dark:bg-cyan-950/60 flex items-center justify-center text-cyan-700 dark:text-cyan-300 group-hover:scale-105 transition">
+              <BarChart3 className="w-7 h-7" />
+            </span>
+            <span>
+              <span className="block text-2xl font-bold text-slate-900 dark:text-slate-100 mb-1">
+                數據儀表板
+              </span>
+              <span className="text-base text-gray-500 dark:text-slate-400">
+                瀏覽、讚好、回應與有待進步統計
+              </span>
+            </span>
+            <span className="mt-auto flex items-center gap-1 text-cyan-700 dark:text-cyan-400 font-bold">
+              查看數據
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </span>
+          </button>
+
+          {/* 選項 7：讀者板面 */}
           <button
             onClick={() => router.push('/')}
             className="group bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl shadow-md border-2 border-blue-200 dark:border-blue-900 hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-lg transition text-left flex flex-col gap-4"

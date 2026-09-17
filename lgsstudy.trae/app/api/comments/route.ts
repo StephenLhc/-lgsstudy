@@ -31,6 +31,7 @@ export async function GET(request: Request) {
           AND c.status = 'approved'
           AND c.is_public = true
           AND p.is_deleted = false
+          AND p.post_date <= (NOW() AT TIME ZONE 'Asia/Hong_Kong')::date
         ORDER BY c.created_at ASC, c.id ASC
       `,
       { retryAfterSent: true },
