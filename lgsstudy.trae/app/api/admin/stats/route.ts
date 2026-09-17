@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    // ───── 1. 文章與互動總覽 ─────
+    // ───── 1. 文章與互動總覽（含訂閱人數，用子查詢一次取回） ─────
     const overviewRows = await withDbRetry(
       (sql) => sql`
         SELECT
@@ -22,7 +22,9 @@ export async function GET(request: Request) {
           COUNT(*) FILTER (WHERE is_deleted = true)::int AS deleted_posts,
           COALESCE(SUM(views) FILTER (WHERE is_deleted = false), 0)::int AS total_views,
           COALESCE(SUM(like_count) FILTER (WHERE is_deleted = false), 0)::int AS total_likes,
-          COALESCE(SUM(dislike_count) FILTER (WHERE is_deleted = false), 0)::int AS total_dislikes
+          COALESCE(SUM(dislike_count) FILTER (WHERE is_deleted = false), 0)::int AS total_dislikes,
+          (SELECT COUNT(*) FROM subscribers WHERE is_active = true)::int AS active_subscribers,
+          (SELECT COUNT(*) FROM subscribers)::int AS total_subscribers
         FROM posts
       `,
       { retryAfterSent: true },
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
       { retryAfterSent: true },
     );
 
-    // ───── 4. 最近 14 天趨勢：每日新回應數＋新發文數（香港時區） ─────
+    // ───── 4. 最近 14 天趨勢：每日新回應數＋新發文數（合併成一次查詢） ─────
     const trendRows = await withDbRetry(
       (sql) => sql`
         WITH days AS (
@@ -72,30 +74,11 @@ export async function GET(request: Request) {
         )
         SELECT
           to_char(d.day, 'YYYY-MM-DD') AS date,
-          COUNT(c.id)::int AS comments
+          COUNT(c.id)::int AS comments,
+          COUNT(p.id)::int AS posts
         FROM days d
         LEFT JOIN comments c
           ON (c.created_at AT TIME ZONE 'Asia/Hong_Kong')::date = d.day
-        GROUP BY d.day
-        ORDER BY d.day
-      `,
-      { retryAfterSent: true },
-    );
-
-    // 新發文數另外查（post_date 是 date，直接比對）
-    const postTrendRows = await withDbRetry(
-      (sql) => sql`
-        WITH days AS (
-          SELECT generate_series(
-            ((NOW() AT TIME ZONE 'Asia/Hong_Kong')::date - INTERVAL '13 days'),
-            (NOW() AT TIME ZONE 'Asia/Hong_Kong')::date,
-            INTERVAL '1 day'
-          )::date AS day
-        )
-        SELECT
-          to_char(d.day, 'YYYY-MM-DD') AS date,
-          COUNT(p.id)::int AS posts
-        FROM days d
         LEFT JOIN posts p
           ON p.post_date = d.day AND p.is_deleted = false
         GROUP BY d.day
@@ -104,12 +87,10 @@ export async function GET(request: Request) {
       { retryAfterSent: true },
     );
 
-    // 合併兩條趨勢線
-    const postTrendMap = new Map(postTrendRows.map((r) => [r.date, Number(r.posts)]));
     const trend = trendRows.map((r) => ({
       date: r.date as string,
       comments: Number(r.comments),
-      posts: postTrendMap.get(r.date as string) ?? 0,
+      posts: Number(r.posts),
     }));
 
     // ───── 5. 分類表現（category 以頓號分隔，一列文章可計入多個分類） ─────
@@ -137,17 +118,6 @@ export async function GET(request: Request) {
     const totalLikes = Number(overview.total_likes) || 0;
     const totalDislikes = Number(overview.total_dislikes) || 0;
 
-    // 訂閱新文章通知的人數
-    const subRows = await withDbRetry(
-      (sql) => sql`
-        SELECT
-          COUNT(*) FILTER (WHERE is_active = true)::int AS active,
-          COUNT(*)::int AS total
-        FROM subscribers
-      `,
-      { retryAfterSent: true },
-    );
-
     return NextResponse.json({
       overview: {
         publishedPosts,
@@ -157,8 +127,8 @@ export async function GET(request: Request) {
         totalLikes,
         totalDislikes,
         avgViews: publishedPosts > 0 ? Math.round(totalViews / publishedPosts) : 0,
-        subscribers: Number(subRows[0]?.active) || 0,
-        totalSubscribers: Number(subRows[0]?.total) || 0,
+        subscribers: Number(overview.active_subscribers) || 0,
+        totalSubscribers: Number(overview.total_subscribers) || 0,
         // 互動比例：有待進步佔「讚好＋有待進步」的比率
         improvementRate:
           totalLikes + totalDislikes > 0

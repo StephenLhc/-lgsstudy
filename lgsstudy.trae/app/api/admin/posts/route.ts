@@ -5,6 +5,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { isAdminRequest } from "../auth";
 import { sendNewPostNotification } from "@/lib/newsletter";
+import { getSiteUrl } from "@/lib/site";
 
 // 需要寫入本機檔案系統（圖片上傳），強制使用 Node.js 執行環境
 export const runtime = "nodejs";
@@ -188,7 +189,7 @@ export async function POST(request: Request) {
     // 因為 Next.js 沒有持久定時器；若有需要可日後用 Vercel Cron 補發。
     const isPublishedTodayOrBefore = postDate <= todayString();
     if (newId && isPublishedTodayOrBefore) {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+      const siteUrl = getSiteUrl();
       after(() =>
         sendNewPostNotification({
           postId: newId,
